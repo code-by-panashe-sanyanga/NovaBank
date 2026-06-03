@@ -1,0 +1,40 @@
+version: "3.9"
+
+# PostgreSQL is required for real ACID + row locking (SELECT … FOR UPDATE).
+# SQLite can run the UI locally; use this Compose file for the real ledger DB.
+
+services:
+  db:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: novabank
+      POSTGRES_PASSWORD: novabank
+      POSTGRES_DB: novabank
+    ports:
+      - "5432:5432"
+    volumes:
+      - novabank_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U novabank -d novabank"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql+psycopg://novabank:novabank@db:5432/novabank
+      SECRET_KEY: ${SECRET_KEY:-change-me-in-prod}
+      PORT: "5002"
+    ports:
+      - "5002:5002"
+
+volumes:
+  novabank_pgdata:
