@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+{% block title %}Insights · NovaBank{% endblock %}
+{% block body_attrs %}data-page="insights"{% endblock %}
+{% block content %}
+<div class="topbar"><h1>Insights</h1></div>
+<div class="grid-2">
+  <div class="card">
+    <h3 style="margin-bottom: 0.75rem">Financial health</h3>
+    <div class="stat-value" id="health-score">—</div>
+    <p class="muted" id="health-disclaimer" style="margin-top: 0.5rem"></p>
+    <ul id="health-reasons" class="muted" style="margin-top: 0.75rem; padding-left: 1.1rem"></ul>
+  </div>
+  <div class="card">
+    <h3 style="margin-bottom: 0.75rem">Spending by category</h3>
+    <canvas id="cat-chart" height="200"></canvas>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script>
+  let chart;
+
+  async function loadInsights() {
+    const data = await api("/api/insights");
+    document.getElementById("health-score").textContent = data.healthScore.score + " / 100";
+    document.getElementById("health-disclaimer").textContent = data.healthScore.disclaimer;
+    document.getElementById("health-reasons").innerHTML = (data.healthScore.reasons || [])
+      .map(function (r) {
+        return "<li>" + r + "</li>";
+      })
+      .join("");
+
+    const ctx = document.getElementById("cat-chart");
+    if (chart) chart.destroy();
+    chart = new Chart(ctx, {
+      type: "doughnut",
+      data: {
+        labels: data.categories.labels,
+        datasets: [
+          {
+            data: data.categories.values.map(Number),
+            backgroundColor: ["#f54e00", "#26251e", "#8a8778", "#c45c26", "#5c7a6e", "#6b5b4f", "#9a3412"],
+          },
+        ],
+      },
+      options: {
+        plugins: { legend: { position: "bottom" } },
+      },
+    });
+  }
+
+  (async function () {
+    if (!requireAuth()) return;
+    await loadInsights();
+    connectLive(loadInsights);
+  })();
+</script>
+{% endblock %}

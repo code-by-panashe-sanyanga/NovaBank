@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{% block title %}NovaBank{% endblock %}</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link
+      href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="/static/css/style.css" />
+  </head>
+  <body {% block body_attrs %}{% endblock %}>
+    <div class="shell">
+      <aside class="sidebar">
+        <div class="brand">Nova<span>Bank</span></div>
+        <nav class="nav" id="main-nav">
+          <a href="/dashboard" data-nav="dashboard">Dashboard</a>
+          <a href="/accounts" data-nav="accounts">Accounts</a>
+          <a href="/payments" data-nav="payments">Payments</a>
+          <a href="/pots" data-nav="pots">Pots</a>
+          <a href="/insights" data-nav="insights">Insights</a>
+          <a href="/cards" data-nav="cards">Cards</a>
+          <a href="/settings" data-nav="settings">Settings</a>
+        </nav>
+        <div style="margin-top: auto">
+          <button type="button" class="btn secondary" onclick="logout()">Log out</button>
+        </div>
+      </aside>
+      <div class="main">
+        {% block content %}{% endblock %}
+      </div>
+    </div>
+    <div id="toast-host" class="toast-host" aria-live="polite"></div>
+    <script src="/static/js/api.js"></script>
+    <script>
+      (function () {
+        if (!requireAuth()) return;
+        const page = document.body.dataset.page;
+        api("/api/auth/me")
+          .then(function (data) {
+            // Admin link only for admin accounts — never shown to customers
+            if (data.user.role === "ADMIN") {
+              const nav = document.getElementById("main-nav");
+              if (!document.querySelector('[data-nav="admin"]')) {
+                const link = document.createElement("a");
+                link.href = "/admin";
+                link.setAttribute("data-nav", "admin");
+                link.textContent = "Admin";
+                nav.appendChild(link);
+              }
+            }
+            document.querySelectorAll("[data-nav]").forEach(function (a) {
+              if (a.getAttribute("data-nav") === page) a.classList.add("active");
+            });
+          })
+          .catch(function () {
+            logout();
+          });
+      })();
+    </script>
+    {% block scripts %}{% endblock %}
+  </body>
+</html>

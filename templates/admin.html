@@ -1,0 +1,104 @@
+{% extends "base.html" %}
+{% block title %}Admin · NovaBank{% endblock %}
+{% block body_attrs %}data-page="admin"{% endblock %}
+{% block content %}
+<div class="topbar"><h1>Admin</h1></div>
+<div class="grid-2">
+  <div class="card">
+    <h3>Customers</h3>
+    <input id="search" placeholder="Search name, email, customer id" style="margin: 0.75rem 0" />
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Name</th><th>Email</th><th>Customer ID</th></tr></thead>
+        <tbody id="customers"></tbody>
+      </table>
+    </div>
+  </div>
+  <div class="card">
+    <h3>Recent transactions</h3>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Ref</th><th>Type</th><th>Amount</th></tr></thead>
+        <tbody id="txns"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+<div class="card" style="margin-top: 1rem">
+  <h3>Audit log</h3>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Action</th><th>Details</th><th>When</th></tr></thead>
+      <tbody id="audit"></tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+
+  async function loadCustomers(q) {
+    const path = q ? "/api/admin/customers?search=" + encodeURIComponent(q) : "/api/admin/customers";
+    const data = await api(path);
+    document.getElementById("customers").innerHTML = data.customers
+      .map(function (c) {
+        return (
+          "<tr><td>" +
+          c.fullName +
+          "</td><td>" +
+          c.email +
+          "</td><td>" +
+          c.customerId +
+          "</td></tr>"
+        );
+      })
+      .join("") || '<tr><td colspan="3" class="muted">None</td></tr>';
+  }
+
+  (async function () {
+    if (!requireAuth()) return;
+    const me = await api("/api/auth/me");
+    if (me.user.role !== "ADMIN") {
+      window.location.href = "/dashboard";
+      return;
+    }
+
+    await loadCustomers("");
+    document.getElementById("search").addEventListener("input", function (e) {
+      loadCustomers(e.target.value);
+    });
+
+    const tx = await api("/api/admin/transactions");
+    document.getElementById("txns").innerHTML = tx.transactions
+      .slice(0, 20)
+      .map(function (t) {
+        return (
+          "<tr><td>" +
+          t.reference +
+          "</td><td>" +
+          t.type +
+          "</td><td>" +
+          moneyGBP(t.amount) +
+          "</td></tr>"
+        );
+      })
+      .join("");
+
+    const audit = await api("/api/admin/audit-logs");
+    document.getElementById("audit").innerHTML = audit.logs
+      .slice(0, 30)
+      .map(function (l) {
+        return (
+          "<tr><td>" +
+          l.action +
+          "</td><td>" +
+          l.details +
+          "</td><td>" +
+          formatDateTime(l.createdAt) +
+          "</td></tr>"
+        );
+      })
+      .join("");
+  })();
+</script>
+{% endblock %}

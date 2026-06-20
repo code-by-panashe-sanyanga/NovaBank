@@ -1,0 +1,140 @@
+{% extends "base.html" %}
+{% block title %}Pots · NovaBank{% endblock %}
+{% block body_attrs %}data-page="pots"{% endblock %}
+{% block content %}
+<div class="topbar"><h1>Pots</h1></div>
+<div class="grid-2">
+  <div>
+    <div id="pots-list" class="grid-2"></div>
+  </div>
+  <div>
+    <form class="card" id="create-pot">
+      <h3>New pot</h3>
+      <label>Name</label>
+      <input name="name" required maxlength="80" placeholder="Holiday" />
+      <label>Target (optional)</label>
+      <input name="targetAmount" type="number" step="0.01" min="0.01" />
+      <button class="btn" type="submit" style="margin-top: 1rem">Create</button>
+      <p class="form-error hidden" data-err></p>
+    </form>
+    <form class="card" id="fund-pot" style="margin-top: 1rem">
+      <h3>Add money</h3>
+      <label>Pot</label>
+      <select name="potId" required></select>
+      <label>From account</label>
+      <select name="fromAccountId" required></select>
+      <label>Amount</label>
+      <input name="amount" type="number" step="0.01" min="0.01" required />
+      <button class="btn" type="submit" style="margin-top: 1rem">Add to pot</button>
+      <p class="form-ok hidden" data-ok></p>
+      <p class="form-error hidden" data-err></p>
+    </form>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+  async function loadPots() {
+    const [potsData, acctData] = await Promise.all([api("/api/pots"), api("/api/accounts")]);
+    const list = document.getElementById("pots-list");
+    if (!potsData.pots.length) {
+      list.innerHTML = '<div class="card muted">No pots yet. Create one to start saving.</div>';
+    } else {
+      list.innerHTML = potsData.pots
+        .map(function (p) {
+          const pct =
+            p.progress != null ? Math.min(100, Math.round(p.progress * 100)) + "%" : "";
+          return (
+            '<div class="card"><div class="stat-label">' +
+            p.name +
+            '</div><div class="stat-value">' +
+            moneyGBP(p.balance) +
+            "</div>" +
+            (p.targetAmount
+              ? '<p class="muted">Target ' +
+                moneyGBP(p.targetAmount) +
+                (pct ? " · " + pct : "") +
+                "</p>"
+              : "") +
+            "</div>"
+          );
+        })
+        .join("");
+    }
+
+    const potOpts = potsData.pots
+      .map(function (p) {
+        return '<option value="' + p.id + '">' + p.name + "</option>";
+      })
+      .join("");
+    document.querySelector("#fund-pot select[name=potId]").innerHTML = potOpts;
+
+    const spendable = acctData.accounts.filter(function (a) {
+      return a.type !== "POT" && a.currency === "GBP";
+    });
+    document.querySelector("#fund-pot select[name=fromAccountId]").innerHTML = spendable
+      .map(function (a) {
+        return (
+          '<option value="' +
+          a.id +
+          '">' +
+          a.type +
+          " · " +
+          a.accountNumber +
+          " · " +
+          moneyGBP(a.balance) +
+          "</option>"
+        );
+      })
+      .join("");
+  }
+
+  (async function () {
+    if (!requireAuth()) return;
+    await loadPots();
+    connectLive(loadPots);
+
+    document.getElementById("create-pot").addEventListener("submit", async function (e) {
+      e.preventDefault();
+      const fd = new FormData(e.target);
+      const err = e.target.querySelector("[data-err]");
+      err.classList.add("hidden");
+      try {
+        const body = { name: fd.get("name") };
+        if (fd.get("targetAmount")) body.targetAmount = fd.get("targetAmount");
+        await api("/api/pots", { method: "POST", body: JSON.stringify(body) });
+        e.target.reset();
+        await loadPots();
+      } catch (ex) {
+        err.textContent = ex.message;
+        err.classList.remove("hidden");
+      }
+    });
+
+    document.getElementById("fund-pot").addEventListener("submit", async function (e) {
+      e.preventDefault();
+      const fd = new FormData(e.target);
+      const ok = e.target.querySelector("[data-ok]");
+      const err = e.target.querySelector("[data-err]");
+      ok.classList.add("hidden");
+      err.classList.add("hidden");
+      try {
+        const potId = fd.get("potId");
+        const result = await api("/api/pots/" + potId + "/add", {
+          method: "POST",
+          body: JSON.stringify({
+            fromAccountId: Number(fd.get("fromAccountId")),
+            amount: fd.get("amount"),
+          }),
+        });
+        ok.textContent = "Done · " + result.reference;
+        ok.classList.remove("hidden");
+        await loadPots();
+      } catch (ex) {
+        err.textContent = ex.message;
+        err.classList.remove("hidden");
+      }
+    });
+  })();
+</script>
+{% endblock %}

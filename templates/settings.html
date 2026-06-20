@@ -1,0 +1,834 @@
+{% extends "base.html" %}
+{% block title %}Settings · NovaBank{% endblock %}
+{% block body_attrs %}data-page="settings"{% endblock %}
+{% block content %}
+<div class="topbar"><h1>Settings</h1></div>
+<div class="settings-layout">
+  <nav class="settings-nav" id="settings-nav" aria-label="Settings sections">
+    <a href="#profile" class="active">Profile &amp; account</a>
+    <a href="#security">Security</a>
+    <a href="#cards">Card controls</a>
+    <a href="#notifications">Notifications</a>
+    <a href="#payments">Payments &amp; transfers</a>
+    <a href="#privacy">Privacy</a>
+    <a href="#app">App preferences</a>
+    <a href="#support">Support</a>
+  </nav>
+
+  <div class="settings-panels" id="settings-root">
+    <p class="muted">Loading settings…</p>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+  applyTheme();
+
+  const BLOCKABLE = ["gambling", "shopping", "entertainment", "eating_out", "online", "atm", "international"];
+
+  function section(id, title, html) {
+    return (
+      '<section class="settings-section card" id="' +
+      id +
+      '"><h2>' +
+      title +
+      "</h2>" +
+      html +
+      "</section>"
+    );
+  }
+
+  function esc(s) {
+    return String(s == null ? "" : s)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/"/g, "&quot;");
+  }
+
+  function applyAppPrefs(app) {
+    document.documentElement.setAttribute("data-font", app.fontScale || "md");
+    document.documentElement.setAttribute("data-contrast", app.highContrast ? "high" : "normal");
+    localStorage.setItem("novabank_font", app.fontScale || "md");
+    localStorage.setItem("novabank_contrast", app.highContrast ? "high" : "normal");
+  }
+
+  function render(data) {
+    const p = data.profile;
+    const sec = data.security;
+    const root = document.getElementById("settings-root");
+    applyAppPrefs(data.app);
+
+    const accountsHtml = data.linkedAccounts
+      .map(function (a) {
+        return (
+          "<tr><td>" +
+          esc(a.potName || a.type) +
+          "</td><td>" +
+          esc(a.accountNumber) +
+          "</td><td>" +
+          esc(a.currency) +
+          " " +
+          esc(a.balance) +
+          "</td><td>" +
+          esc(a.status) +
+          "</td></tr>"
+        );
+      })
+      .join("");
+
+    const sessionsHtml = sec.sessions
+      .map(function (s) {
+        return (
+          "<tr><td>" +
+          esc(s.ip || "—") +
+          (s.current ? ' <span class="pill">This device</span>' : "") +
+          (s.trusted ? ' <span class="pill">Trusted</span>' : "") +
+          '</td><td class="muted">' +
+          esc((s.userAgent || "").slice(0, 48)) +
+          "</td><td>" +
+          esc(formatDateTime(s.lastSeen)) +
+          "</td><td>" +
+          (s.current
+            ? ""
+            : '<button class="btn secondary" data-revoke="' +
+              s.id +
+              '">Log out</button> ') +
+          (!s.trusted && !s.current
+            ? '<button class="btn secondary" data-trust="' + s.id + '">Trust</button>'
+            : "") +
+          "</td></tr>"
+        );
+      })
+      .join("");
+
+    const loginsHtml = sec.loginActivity
+      .map(function (r) {
+        return (
+          "<tr><td>" +
+          (r.success ? "OK" : "Failed") +
+          "</td><td>" +
+          esc(r.ip) +
+          '</td><td class="muted">' +
+          esc((r.userAgent || "").slice(0, 40)) +
+          "</td><td>" +
+          esc(formatDateTime(r.createdAt)) +
+          "</td></tr>"
+        );
+      })
+      .join("");
+
+    const cardsHtml = (data.cards || [])
+      .map(function (c) {
+        const checks = BLOCKABLE.map(function (cat) {
+          const on = (c.blockedCategories || []).indexOf(cat) !== -1;
+          return (
+            '<label class="check"><input type="checkbox" data-card-cat="' +
+            c.id +
+            '" value="' +
+            cat +
+            '"' +
+            (on ? " checked" : "") +
+            " /> " +
+            cat.replace("_", " ") +
+            "</label>"
+          );
+        }).join("");
+        return (
+          '<div class="settings-block" data-card-panel="' +
+          c.id +
+          '"><div class="stat-label">' +
+          esc(c.maskedNumber) +
+          ' · <span class="pill' +
+          (c.isFrozen ? " frozen" : "") +
+          '">' +
+          (c.isFrozen ? "Frozen" : "Active") +
+          '</span></div><div class="grid-2 tight">' +
+          '<div><label>Daily limit</label><input data-daily="' +
+          c.id +
+          '" type="number" step="0.01" value="' +
+          esc(c.dailyLimit || "") +
+          '" placeholder="No limit" /></div>' +
+          '<div><label>Per-transaction limit</label><input data-pertxn="' +
+          c.id +
+          '" type="number" step="0.01" value="' +
+          esc(c.perTxnLimit || "") +
+          '" placeholder="No limit" /></div></div>' +
+          '<div class="toggle-row">' +
+          '<label class="check"><input type="checkbox" data-toggle="contactless" data-card="' +
+          c.id +
+          '"' +
+          (c.contactlessEnabled ? " checked" : "") +
+          " /> Contactless</label>" +
+          '<label class="check"><input type="checkbox" data-toggle="online" data-card="' +
+          c.id +
+          '"' +
+          (c.onlineEnabled ? " checked" : "") +
+          " /> Online</label>" +
+          '<label class="check"><input type="checkbox" data-toggle="atm" data-card="' +
+          c.id +
+          '"' +
+          (c.atmEnabled ? " checked" : "") +
+          " /> ATM</label>" +
+          '<label class="check"><input type="checkbox" data-toggle="international" data-card="' +
+          c.id +
+          '"' +
+          (c.internationalEnabled ? " checked" : "") +
+          " /> International</label></div>" +
+          '<p class="muted" style="margin:0.75rem 0 0.35rem">Block categories</p><div class="check-grid">' +
+          checks +
+          "</div>" +
+          '<div class="row-actions">' +
+          '<button class="btn" data-save-card="' +
+          c.id +
+          '">Save card</button>' +
+          '<button class="btn secondary" data-freeze-card="' +
+          c.id +
+          '" data-frozen="' +
+          c.isFrozen +
+          '">' +
+          (c.isFrozen ? "Unfreeze" : "Freeze") +
+          "</button></div>" +
+          '<form class="pin-form" data-pin-form="' +
+          c.id +
+          '"><label>Change PIN (mock)</label><input name="pin" type="password" inputmode="numeric" maxlength="4" pattern="\\d{4}" placeholder="••••" required />' +
+          '<button class="btn secondary" type="submit">Update PIN</button></form></div>'
+        );
+      })
+      .join("") || '<p class="muted">No cards</p>';
+
+    const prefs = data.notifications.prefs || {};
+    function notifMatrix() {
+      const events = [
+        ["every_transaction", "Every transaction"],
+        ["large_only", "Large transactions only"],
+        ["low_balance", "Low balance"],
+        ["failed_payments", "Failed payments"],
+        ["security", "Security alerts"],
+      ];
+      const channels = ["push", "email", "sms"];
+      let html =
+        '<div class="table-wrap"><table class="notif-table"><thead><tr><th>Event</th><th>Push</th><th>Email</th><th>SMS</th></tr></thead><tbody>';
+      events.forEach(function (ev) {
+        html += "<tr><td>" + ev[1] + "</td>";
+        channels.forEach(function (ch) {
+          const on = prefs[ch] && prefs[ch][ev[0]];
+          html +=
+            '<td><input type="checkbox" data-notif="' +
+            ch +
+            "." +
+            ev[0] +
+            '"' +
+            (on ? " checked" : "") +
+            " /></td>";
+        });
+        html += "</tr>";
+      });
+      return html + "</tbody></table></div>";
+    }
+
+    const payeeOpts = (data.payments.payees || [])
+      .map(function (x) {
+        return (
+          "<tr><td>" +
+          esc(x.nickname || x.name) +
+          "</td><td>" +
+          esc(x.sortCode) +
+          " · " +
+          esc(x.accountNumber) +
+          '</td><td><button class="btn secondary" data-del-payee="' +
+          x.id +
+          '">Remove</button></td></tr>'
+        );
+      })
+      .join("");
+
+    const recurringHtml = (data.payments.recurring || [])
+      .map(function (r) {
+        return (
+          "<tr><td>" +
+          moneyGBP(r.amount) +
+          " · " +
+          esc(r.frequency) +
+          "</td><td>" +
+          esc(r.toAccountNumber) +
+          "</td><td>" +
+          esc(r.status) +
+          "</td><td>" +
+          (r.status === "ACTIVE"
+            ? '<button class="btn secondary" data-cancel-recurring="' + r.id + '">Cancel</button>'
+            : "") +
+          "</td></tr>"
+        );
+      })
+      .join("");
+
+    const ticketsHtml = (data.support.tickets || [])
+      .map(function (t) {
+        return (
+          "<tr><td>" +
+          esc(t.subject) +
+          "</td><td>" +
+          esc(t.status) +
+          "</td><td>" +
+          esc(t.relatedReference || "—") +
+          "</td><td>" +
+          esc(formatDateTime(t.createdAt)) +
+          "</td></tr>"
+        );
+      })
+      .join("");
+
+    const faqHtml = (data.support.faq || [])
+      .map(function (f) {
+        return "<details><summary>" + esc(f.q) + "</summary><p class='muted'>" + esc(f.a) + "</p></details>";
+      })
+      .join("");
+
+    const acctOptions = data.linkedAccounts
+      .filter(function (a) {
+        return a.type !== "POT";
+      })
+      .map(function (a) {
+        return (
+          '<option value="' +
+          a.id +
+          '"' +
+          (data.payments.defaultAccountId === a.id ? " selected" : "") +
+          ">" +
+          esc(a.type) +
+          " · " +
+          esc(a.accountNumber) +
+          "</option>"
+        );
+      })
+      .join("");
+
+    root.innerHTML =
+      section(
+        "profile",
+        "Profile &amp; account",
+        '<form id="profile-form" class="settings-form">' +
+          '<div class="grid-2 tight"><div><label>Full name</label><input name="fullName" value="' +
+          esc(p.fullName) +
+          '" required /></div>' +
+          '<div><label>Email <span class="pill">Verified</span></label><input value="' +
+          esc(p.email) +
+          '" disabled /></div>' +
+          '<div><label>Phone</label><input name="phone" value="' +
+          esc(p.phone || "") +
+          '" /></div>' +
+          '<div><label>Customer ID</label><input value="' +
+          esc(p.customerId) +
+          '" disabled /></div>' +
+          '<div><label>Address</label><input name="addressLine" value="' +
+          esc(p.addressLine || "") +
+          '" /></div>' +
+          '<div><label>City</label><input name="city" value="' +
+          esc(p.city || "") +
+          '" /></div>' +
+          '<div><label>Postcode</label><input name="postcode" value="' +
+          esc(p.postcode || "") +
+          '" /></div></div>' +
+          '<p class="muted hint">Changing email or phone would start a verification flow in production.</p>' +
+          '<button class="btn" type="submit">Save profile</button></form>' +
+          '<form id="password-form" class="settings-form" style="margin-top:1.25rem">' +
+          "<h3>Change password</h3>" +
+          '<div class="grid-2 tight"><div><label>Current password</label><input name="currentPassword" type="password" required /></div>' +
+          '<div><label>New password</label><input name="newPassword" type="password" minlength="8" required /></div></div>' +
+          '<button class="btn secondary" type="submit">Update password</button></form>' +
+          '<div class="settings-block" style="margin-top:1.25rem"><h3>Linked accounts</h3>' +
+          '<div class="table-wrap"><table><thead><tr><th>Account</th><th>Number</th><th>Balance</th><th>Status</th></tr></thead><tbody>' +
+          accountsHtml +
+          "</tbody></table></div></div>" +
+          '<div class="row-actions" style="margin-top:1rem">' +
+          '<button class="btn secondary" id="export-data">Download data export</button>' +
+          '<button class="btn danger" id="close-account">Close account</button></div>' +
+          '<p class="muted hint">Close account is a GDPR-style stub — it records intent without wiping the ledger.</p>'
+      ) +
+      section(
+        "security",
+        "Security",
+        '<div class="toggle-row">' +
+          '<label class="check"><input type="checkbox" id="totp-toggle"' +
+          (sec.totpEnabled ? " checked" : "") +
+          " /> Two-factor authentication (app TOTP)</label>" +
+          '<label class="check"><input type="checkbox" id="bio-toggle"' +
+          (sec.biometricEnabled ? " checked" : "") +
+          " /> Biometric login (PWA / Face ID stub)</label></div>" +
+          '<p class="muted hint">Toggles are stored for demo. Wire a real authenticator for production.</p>' +
+          '<div class="settings-block"><div class="row-between"><h3>Active sessions</h3>' +
+          '<button class="btn secondary" id="revoke-others">Log out of all other devices</button></div>' +
+          '<div class="table-wrap"><table><thead><tr><th>IP</th><th>Device</th><th>Last seen</th><th></th></tr></thead><tbody>' +
+          sessionsHtml +
+          "</tbody></table></div></div>" +
+          '<div class="settings-block"><h3>Login activity</h3>' +
+          '<div class="table-wrap"><table><thead><tr><th>Result</th><th>IP</th><th>Device</th><th>When</th></tr></thead><tbody>' +
+          loginsHtml +
+          "</tbody></table></div></div>"
+      ) +
+      section("cards", "Card controls", cardsHtml) +
+      section(
+        "notifications",
+        "Notifications",
+        notifMatrix() +
+          '<div class="settings-form" style="margin-top:1rem"><label>Spending threshold alert (£ / day)</label>' +
+          '<input id="spend-alert" type="number" step="0.01" value="' +
+          esc(data.notifications.dailySpendAlert || "") +
+          '" placeholder="e.g. 100" />' +
+          '<button class="btn" id="save-notifs" style="margin-top:0.75rem">Save notification prefs</button></div>'
+      ) +
+      section(
+        "payments",
+        "Payments &amp; transfers",
+        '<form id="payments-prefs" class="settings-form"><div class="grid-2 tight">' +
+          "<div><label>Default account for payments</label><select name=\"defaultAccountId\">" +
+          acctOptions +
+          "</select></div>" +
+          '<div><label>Transfer limit</label><input name="transferLimit" type="number" step="0.01" value="' +
+          esc(data.payments.transferLimit || "") +
+          '" placeholder="No limit" /></div></div>' +
+          '<button class="btn" type="submit">Save</button></form>' +
+          '<form id="round-ups-form" class="settings-form" style="margin-top:1rem"><h3>Round-ups</h3>' +
+          '<label class="check"><input type="checkbox" name="enabled" ' +
+          (data.payments.roundUps.enabled ? "checked" : "") +
+          " /> Enable round-ups</label>" +
+          '<label>Round-up pot</label><select name="potId" id="round-up-pot"></select>' +
+          '<button class="btn secondary" type="submit">Save round-ups</button></form>' +
+          '<div class="settings-block"><h3>Saved payees</h3>' +
+          '<div class="table-wrap"><table><thead><tr><th>Name</th><th>Account</th><th></th></tr></thead><tbody id="payee-body">' +
+          (payeeOpts || '<tr><td colspan="3" class="muted">No saved payees</td></tr>') +
+          "</tbody></table></div>" +
+          '<form id="payee-form" class="settings-form grid-2 tight" style="margin-top:0.75rem">' +
+          '<div><label>Name</label><input name="name" required /></div>' +
+          '<div><label>Nickname</label><input name="nickname" /></div>' +
+          '<div><label>Sort code</label><input name="sortCode" value="04-29-09" required /></div>' +
+          '<div><label>Account number</label><input name="accountNumber" required pattern="[0-9]{8}" /></div>' +
+          '<button class="btn secondary" type="submit">Add payee</button></form></div>' +
+          '<div class="settings-block"><h3>Recurring payments</h3>' +
+          '<div class="table-wrap"><table><thead><tr><th>Amount</th><th>To</th><th>Status</th><th></th></tr></thead><tbody>' +
+          (recurringHtml || '<tr><td colspan="4" class="muted">None scheduled</td></tr>') +
+          "</tbody></table></div>" +
+          '<form id="recurring-form" class="settings-form grid-2 tight" style="margin-top:0.75rem">' +
+          "<div><label>From</label><select name=\"fromAccountId\">" +
+          acctOptions +
+          "</select></div>" +
+          '<div><label>To account</label><input name="toAccountNumber" required pattern="[0-9]{8}" /></div>' +
+          '<div><label>Amount</label><input name="amount" type="number" step="0.01" required /></div>' +
+          '<div><label>Frequency</label><select name="frequency"><option>MONTHLY</option><option>WEEKLY</option></select></div>' +
+          '<div><label>Note</label><input name="note" /></div>' +
+          '<button class="btn secondary" type="submit">Schedule</button></form>' +
+          '<p class="muted hint">Scheduled transfers are stored as a state machine (active / cancelled). Execution worker is optional depth.</p></div>'
+      ) +
+      section(
+        "privacy",
+        "Privacy &amp; permissions",
+        '<form id="privacy-form" class="settings-form">' +
+          '<label class="check"><input type="checkbox" name="openBankingShare"' +
+          (data.privacy.openBankingShare ? " checked" : "") +
+          " /> Allow open-banking style third-party connections (mock)</label>" +
+          '<label class="check"><input type="checkbox" name="marketingEmail"' +
+          (data.privacy.marketingEmail ? " checked" : "") +
+          " /> Marketing emails</label>" +
+          '<label class="check"><input type="checkbox" name="marketingSms"' +
+          (data.privacy.marketingSms ? " checked" : "") +
+          " /> Marketing SMS</label>" +
+          '<button class="btn" type="submit">Save privacy</button>' +
+          '<p class="muted hint">Open banking maps to real PSD2 / Open Banking APIs in production.</p></form>'
+      ) +
+      section(
+        "app",
+        "App preferences",
+        '<form id="app-form" class="settings-form grid-2 tight">' +
+          '<div><label>Currency display</label><select name="preferredCurrency">' +
+          ["GBP", "EUR", "USD"]
+            .map(function (c) {
+              return (
+                '<option value="' +
+                c +
+                '"' +
+                (data.app.preferredCurrency === c ? " selected" : "") +
+                ">" +
+                c +
+                "</option>"
+              );
+            })
+            .join("") +
+          '</select></div><div><label>Language</label><select name="language">' +
+          '<option value="en-GB"' +
+          (data.app.language === "en-GB" ? " selected" : "") +
+          ">English (UK)</option>" +
+          '<option value="en-US"' +
+          (data.app.language === "en-US" ? " selected" : "") +
+          ">English (US)</option></select></div>" +
+          '<div><label>Font size</label><select name="fontScale">' +
+          ["sm", "md", "lg"]
+            .map(function (s) {
+              return (
+                '<option value="' +
+                s +
+                '"' +
+                (data.app.fontScale === s ? " selected" : "") +
+                ">" +
+                s.toUpperCase() +
+                "</option>"
+              );
+            })
+            .join("") +
+          '</select></div><div><label class="check" style="margin-top:1.6rem"><input type="checkbox" name="highContrast"' +
+          (data.app.highContrast ? " checked" : "") +
+          " /> High contrast</label></div></div>" +
+          '<div style="margin-top:1rem"><label>Theme</label><div style="margin-top:0.35rem">' +
+          '<button type="button" class="btn secondary theme-toggle" data-theme-toggle onclick="toggleTheme()" aria-pressed="false">' +
+          '<span class="theme-toggle-track" aria-hidden="true"></span><span data-theme-label>Light</span></button></div></div>' +
+          '<button class="btn" type="submit" style="margin-top:1rem">Save app prefs</button></form>'
+      ) +
+      section(
+        "support",
+        "Support",
+        "<h3>Help centre</h3>" +
+          faqHtml +
+          '<div class="settings-block" style="margin-top:1rem"><h3>Contact / dispute</h3>' +
+          '<form id="ticket-form" class="settings-form">' +
+          '<label>Subject</label><input name="subject" required placeholder="Dispute a transaction" />' +
+          '<label>Transaction reference (optional)</label><input name="relatedReference" placeholder="TXN-…" />' +
+          '<label>Message</label><textarea name="message" rows="3" required></textarea>' +
+          '<button class="btn" type="submit">Submit ticket</button></form>' +
+          '<div class="table-wrap" style="margin-top:1rem"><table><thead><tr><th>Subject</th><th>Status</th><th>Ref</th><th>Opened</th></tr></thead><tbody>' +
+          (ticketsHtml || '<tr><td colspan="4" class="muted">No tickets</td></tr>') +
+          "</tbody></table></div></div>"
+      );
+
+    wire(data);
+    applyTheme();
+  }
+
+  async function reload() {
+    const data = await api("/api/settings/overview");
+    render(data);
+    const pots = await api("/api/pots");
+    const sel = document.getElementById("round-up-pot");
+    if (sel) {
+      sel.innerHTML =
+        '<option value="">Select a pot</option>' +
+        pots.pots
+          .map(function (p) {
+            return (
+              '<option value="' +
+              p.id +
+              '"' +
+              (data.payments.roundUps.potId === p.id ? " selected" : "") +
+              ">" +
+              esc(p.name) +
+              "</option>"
+            );
+          })
+          .join("");
+    }
+  }
+
+  function wire(data) {
+    document.querySelectorAll(".settings-nav a").forEach(function (a) {
+      a.addEventListener("click", function () {
+        document.querySelectorAll(".settings-nav a").forEach(function (x) {
+          x.classList.remove("active");
+        });
+        a.classList.add("active");
+      });
+    });
+
+    document.getElementById("profile-form").addEventListener("submit", async function (e) {
+      e.preventDefault();
+      const fd = new FormData(e.target);
+      await api("/api/settings/profile", {
+        method: "PATCH",
+        body: JSON.stringify({
+          fullName: fd.get("fullName"),
+          phone: fd.get("phone"),
+          addressLine: fd.get("addressLine"),
+          city: fd.get("city"),
+          postcode: fd.get("postcode"),
+        }),
+      });
+      showToast("Profile saved", "ok");
+      reload();
+    });
+
+    document.getElementById("password-form").addEventListener("submit", async function (e) {
+      e.preventDefault();
+      const fd = new FormData(e.target);
+      try {
+        await api("/api/settings/password", {
+          method: "POST",
+          body: JSON.stringify({
+            currentPassword: fd.get("currentPassword"),
+            newPassword: fd.get("newPassword"),
+          }),
+        });
+        showToast("Password updated", "ok");
+        e.target.reset();
+      } catch (ex) {
+        showToast(ex.message, "error");
+      }
+    });
+
+    document.getElementById("export-data").addEventListener("click", async function () {
+      const token = getToken();
+      const res = await fetch("/api/settings/export", {
+        headers: { Authorization: "Bearer " + token },
+      });
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "novabank-export.json";
+      a.click();
+      URL.revokeObjectURL(url);
+    });
+
+    document.getElementById("close-account").addEventListener("click", async function () {
+      if (!confirm("Request account closure? This is a stub for demo.")) return;
+      const res = await api("/api/settings/close-account", { method: "POST", body: "{}" });
+      showToast(res.message || "Request recorded", "ok");
+    });
+
+    async function saveSecurity() {
+      await api("/api/settings/security", {
+        method: "PATCH",
+        body: JSON.stringify({
+          totpEnabled: document.getElementById("totp-toggle").checked,
+          biometricEnabled: document.getElementById("bio-toggle").checked,
+        }),
+      });
+      showToast("Security prefs saved", "ok");
+    }
+    document.getElementById("totp-toggle").addEventListener("change", saveSecurity);
+    document.getElementById("bio-toggle").addEventListener("change", saveSecurity);
+
+    document.getElementById("revoke-others").addEventListener("click", async function () {
+      const res = await api("/api/settings/sessions/revoke-others", { method: "POST", body: "{}" });
+      showToast("Logged out " + res.revoked + " other device(s)", "ok");
+      reload();
+    });
+
+    document.querySelectorAll("[data-revoke]").forEach(function (btn) {
+      btn.addEventListener("click", async function () {
+        await api("/api/settings/sessions/" + btn.getAttribute("data-revoke") + "/revoke", {
+          method: "POST",
+          body: "{}",
+        });
+        reload();
+      });
+    });
+    document.querySelectorAll("[data-trust]").forEach(function (btn) {
+      btn.addEventListener("click", async function () {
+        await api("/api/settings/sessions/" + btn.getAttribute("data-trust") + "/trust", {
+          method: "POST",
+          body: "{}",
+        });
+        reload();
+      });
+    });
+
+    document.querySelectorAll("[data-save-card]").forEach(function (btn) {
+      btn.addEventListener("click", async function () {
+        const id = btn.getAttribute("data-save-card");
+        const blocked = [];
+        document.querySelectorAll('[data-card-cat="' + id + '"]').forEach(function (cb) {
+          if (cb.checked) blocked.push(cb.value);
+        });
+        const map = {
+          contactless: "contactlessEnabled",
+          online: "onlineEnabled",
+          atm: "atmEnabled",
+          international: "internationalEnabled",
+        };
+        const body = {
+          dailyLimit: document.querySelector('[data-daily="' + id + '"]').value || null,
+          perTxnLimit: document.querySelector('[data-pertxn="' + id + '"]').value || null,
+          blockedCategories: blocked,
+        };
+        document.querySelectorAll('[data-card="' + id + '"][data-toggle]').forEach(function (cb) {
+          body[map[cb.getAttribute("data-toggle")]] = cb.checked;
+        });
+        await api("/api/settings/cards/" + id, { method: "PATCH", body: JSON.stringify(body) });
+        showToast("Card controls saved", "ok");
+      });
+    });
+
+    document.querySelectorAll("[data-freeze-card]").forEach(function (btn) {
+      btn.addEventListener("click", async function () {
+        const id = btn.getAttribute("data-freeze-card");
+        const frozen = btn.getAttribute("data-frozen") === "true";
+        await api("/api/cards/" + id + "/" + (frozen ? "unfreeze" : "freeze"), {
+          method: "POST",
+          body: "{}",
+        });
+        reload();
+      });
+    });
+
+    document.querySelectorAll("[data-pin-form]").forEach(function (form) {
+      form.addEventListener("submit", async function (e) {
+        e.preventDefault();
+        const id = form.getAttribute("data-pin-form");
+        const pin = new FormData(form).get("pin");
+        const res = await api("/api/settings/cards/" + id + "/pin", {
+          method: "POST",
+          body: JSON.stringify({ newPin: pin }),
+        });
+        showToast(res.message || "PIN updated", "ok");
+        form.reset();
+      });
+    });
+
+    document.getElementById("save-notifs").addEventListener("click", async function () {
+      const prefs = { push: {}, email: {}, sms: {} };
+      document.querySelectorAll("[data-notif]").forEach(function (cb) {
+        const parts = cb.getAttribute("data-notif").split(".");
+        prefs[parts[0]][parts[1]] = cb.checked;
+      });
+      await api("/api/settings/notifications", {
+        method: "PUT",
+        body: JSON.stringify({
+          prefs: prefs,
+          dailySpendAlert: document.getElementById("spend-alert").value || null,
+        }),
+      });
+      showToast("Notification prefs saved", "ok");
+    });
+
+    document.getElementById("payments-prefs").addEventListener("submit", async function (e) {
+      e.preventDefault();
+      const fd = new FormData(e.target);
+      await api("/api/settings/payments", {
+        method: "PUT",
+        body: JSON.stringify({
+          defaultAccountId: Number(fd.get("defaultAccountId")),
+          transferLimit: fd.get("transferLimit") || null,
+        }),
+      });
+      showToast("Payment prefs saved", "ok");
+    });
+
+    document.getElementById("round-ups-form").addEventListener("submit", async function (e) {
+      e.preventDefault();
+      const fd = new FormData(e.target);
+      await api("/api/settings/round-ups", {
+        method: "PUT",
+        body: JSON.stringify({
+          enabled: !!fd.get("enabled"),
+          potId: fd.get("potId") ? Number(fd.get("potId")) : null,
+        }),
+      });
+      showToast("Round-ups saved", "ok");
+    });
+
+    document.getElementById("payee-form").addEventListener("submit", async function (e) {
+      e.preventDefault();
+      const fd = new FormData(e.target);
+      await api("/api/settings/payees", {
+        method: "POST",
+        body: JSON.stringify({
+          name: fd.get("name"),
+          nickname: fd.get("nickname") || null,
+          sortCode: fd.get("sortCode"),
+          accountNumber: fd.get("accountNumber"),
+        }),
+      });
+      reload();
+    });
+
+    document.querySelectorAll("[data-del-payee]").forEach(function (btn) {
+      btn.addEventListener("click", async function () {
+        await api("/api/settings/payees/" + btn.getAttribute("data-del-payee"), { method: "DELETE" });
+        reload();
+      });
+    });
+
+    document.getElementById("recurring-form").addEventListener("submit", async function (e) {
+      e.preventDefault();
+      const fd = new FormData(e.target);
+      await api("/api/settings/recurring", {
+        method: "POST",
+        body: JSON.stringify({
+          fromAccountId: Number(fd.get("fromAccountId")),
+          toAccountNumber: fd.get("toAccountNumber"),
+          amount: fd.get("amount"),
+          frequency: fd.get("frequency"),
+          note: fd.get("note") || null,
+        }),
+      });
+      reload();
+    });
+
+    document.querySelectorAll("[data-cancel-recurring]").forEach(function (btn) {
+      btn.addEventListener("click", async function () {
+        await api("/api/settings/recurring/" + btn.getAttribute("data-cancel-recurring") + "/cancel", {
+          method: "POST",
+          body: "{}",
+        });
+        reload();
+      });
+    });
+
+    document.getElementById("privacy-form").addEventListener("submit", async function (e) {
+      e.preventDefault();
+      const fd = new FormData(e.target);
+      await api("/api/settings/privacy", {
+        method: "PUT",
+        body: JSON.stringify({
+          openBankingShare: !!fd.get("openBankingShare"),
+          marketingEmail: !!fd.get("marketingEmail"),
+          marketingSms: !!fd.get("marketingSms"),
+        }),
+      });
+      showToast("Privacy saved", "ok");
+    });
+
+    document.getElementById("app-form").addEventListener("submit", async function (e) {
+      e.preventDefault();
+      const fd = new FormData(e.target);
+      const res = await api("/api/settings/app", {
+        method: "PUT",
+        body: JSON.stringify({
+          preferredCurrency: fd.get("preferredCurrency"),
+          language: fd.get("language"),
+          fontScale: fd.get("fontScale"),
+          highContrast: !!fd.get("highContrast"),
+        }),
+      });
+      applyAppPrefs(res.app);
+      showToast("App prefs saved", "ok");
+    });
+
+    document.getElementById("ticket-form").addEventListener("submit", async function (e) {
+      e.preventDefault();
+      const fd = new FormData(e.target);
+      await api("/api/settings/support/tickets", {
+        method: "POST",
+        body: JSON.stringify({
+          subject: fd.get("subject"),
+          message: fd.get("message"),
+          relatedReference: fd.get("relatedReference") || null,
+        }),
+      });
+      showToast("Ticket opened", "ok");
+      reload();
+    });
+  }
+
+  (async function () {
+    if (!requireAuth()) return;
+    const font = localStorage.getItem("novabank_font");
+    const contrast = localStorage.getItem("novabank_contrast");
+    if (font) document.documentElement.setAttribute("data-font", font);
+    if (contrast) document.documentElement.setAttribute("data-contrast", contrast);
+    try {
+      await reload();
+    } catch (err) {
+      if (err.status === 401) logout();
+      else document.getElementById("settings-root").innerHTML = '<p class="form-error">' + err.message + "</p>";
+    }
+  })();
+</script>
+{% endblock %}

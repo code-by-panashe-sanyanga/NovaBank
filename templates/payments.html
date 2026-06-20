@@ -1,0 +1,286 @@
+{% extends "base.html" %}
+{% block title %}Payments · NovaBank{% endblock %}
+{% block body_attrs %}data-page="payments"{% endblock %}
+{% block content %}
+<div class="topbar"><h1>Payments</h1></div>
+<div class="grid-3">
+  <form class="card" id="deposit-form">
+    <h3>Deposit</h3>
+    <label>Account</label>
+    <select name="accountId" required></select>
+    <label>Amount</label>
+    <input name="amount" type="number" step="0.01" min="0.01" required />
+    <label>Note</label>
+    <input name="note" placeholder="Salary, Tesco…" />
+    <button class="btn" type="submit" style="margin-top: 1rem">Deposit</button>
+    <p class="form-ok hidden" data-ok></p>
+    <p class="form-error hidden" data-err></p>
+  </form>
+
+  <form class="card" id="withdraw-form">
+    <h3>Card payment</h3>
+    <label>Account</label>
+    <select name="accountId" required></select>
+    <label>Amount</label>
+    <input name="amount" type="number" step="0.01" min="0.01" required />
+    <label>Merchant / note</label>
+    <input name="note" placeholder="Tesco, Uber, Netflix…" />
+    <button class="btn" type="submit" style="margin-top: 1rem">Pay</button>
+    <p class="form-ok hidden" data-ok></p>
+    <p class="form-error hidden" data-err></p>
+  </form>
+
+  <form class="card" id="transfer-form">
+    <h3>Transfer</h3>
+    <label>From account</label>
+    <select name="fromAccountId" required></select>
+    <label>To account number</label>
+    <input name="toAccountNumber" required pattern="[0-9]{8}" placeholder="8 digits" />
+    <label>Amount</label>
+    <input name="amount" type="number" step="0.01" min="0.01" required />
+    <label>Note</label>
+    <input name="note" />
+    <button class="btn" type="submit" style="margin-top: 1rem">Transfer</button>
+    <p class="form-ok hidden" data-ok></p>
+    <p class="form-error hidden" data-err></p>
+  </form>
+</div>
+
+<div class="grid-2" style="margin-top: 1rem">
+  <form class="card" id="request-form">
+    <h3>Request money</h3>
+    <label>From (email)</label>
+    <input name="toEmail" type="email" required placeholder="jamie@example.com" />
+    <label>Amount</label>
+    <input name="amount" type="number" step="0.01" min="0.01" required />
+    <label>Note</label>
+    <input name="note" placeholder="Split dinner" />
+    <button class="btn" type="submit" style="margin-top: 1rem">Send request</button>
+    <p class="form-ok hidden" data-ok></p>
+    <p class="form-error hidden" data-err></p>
+  </form>
+
+  <form class="card" id="fx-form">
+    <h3>Convert currency</h3>
+    <p class="muted" style="margin-bottom: 0.75rem">Live ECB rates via Frankfurter.</p>
+    <label>From account</label>
+    <select name="fromAccountId" required></select>
+    <label>To currency</label>
+    <select name="toCurrency">
+      <option value="EUR">EUR</option>
+      <option value="USD">USD</option>
+      <option value="GBP">GBP</option>
+    </select>
+    <label>Amount</label>
+    <input name="amount" type="number" step="0.01" min="0.01" required />
+    <p class="muted" id="fx-rate" style="margin-top: 0.5rem"></p>
+    <button class="btn" type="submit" style="margin-top: 1rem">Convert</button>
+    <p class="form-ok hidden" data-ok></p>
+    <p class="form-error hidden" data-err></p>
+  </form>
+</div>
+
+<div class="card" style="margin-top: 1rem">
+  <h3 style="margin-bottom: 0.75rem">Payment requests</h3>
+  <div id="requests"></div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+  function wireForm(form, path, bodyFn) {
+    form.addEventListener("submit", async function (e) {
+      e.preventDefault();
+      const ok = form.querySelector("[data-ok]");
+      const err = form.querySelector("[data-err]");
+      ok.classList.add("hidden");
+      err.classList.add("hidden");
+      try {
+        const result = await api(path, {
+          method: "POST",
+          body: JSON.stringify(bodyFn(new FormData(form))),
+        });
+        let msg = "Done";
+        if (result.reference) msg += " · " + result.reference;
+        if (result.roundUpReference) msg += " · round-up " + result.roundUpReference;
+        if (result.bought) msg += " · got " + result.bought + " " + result.currency;
+        ok.textContent = msg;
+        ok.classList.remove("hidden");
+        form.reset();
+        await fillAccounts();
+        await loadRequests();
+      } catch (ex) {
+        err.textContent = ex.message;
+        err.classList.remove("hidden");
+      }
+    });
+  }
+
+  async function fillAccounts() {
+    const data = await api("/api/accounts");
+    const spendable = data.accounts.filter(function (a) {
+      return a.type !== "POT";
+    });
+    const options = spendable
+      .map(function (a) {
+        return (
+          '<option value="' +
+          a.id +
+          '">' +
+          a.type +
+          " · " +
+          a.currency +
+          " · " +
+          a.accountNumber +
+          " · " +
+          a.balance +
+          "</option>"
+        );
+      })
+      .join("");
+    document
+      .querySelectorAll(
+        "#deposit-form select[name=accountId], #withdraw-form select[name=accountId], #transfer-form select[name=fromAccountId], #fx-form select[name=fromAccountId]"
+      )
+      .forEach(function (sel) {
+        sel.innerHTML = options;
+      });
+  }
+
+  async function loadRequests() {
+    const data = await api("/api/payment-requests");
+    const root = document.getElementById("requests");
+    const rows = []
+      .concat(
+        data.incoming.map(function (r) {
+          return Object.assign({}, r, { side: "in" });
+        })
+      )
+      .concat(
+        data.outgoing.map(function (r) {
+          return Object.assign({}, r, { side: "out" });
+        })
+      );
+    if (!rows.length) {
+      root.innerHTML = '<p class="muted">No requests yet.</p>';
+      return;
+    }
+    root.innerHTML =
+      '<div class="table-wrap"><table><thead><tr><th>Who</th><th>Amount</th><th>Status</th><th></th></tr></thead><tbody>' +
+      rows
+        .map(function (r) {
+          let actions = "";
+          if (r.side === "in" && r.status === "PENDING") {
+            actions =
+              '<button class="btn secondary" data-pay="' +
+              r.id +
+              '">Pay</button> ' +
+              '<button class="btn secondary" data-decline="' +
+              r.id +
+              '">Decline</button>';
+          }
+          return (
+            "<tr><td>" +
+            (r.side === "in" ? "From " : "To ") +
+            r.counterparty +
+            (r.note ? " · " + r.note : "") +
+            "</td><td>" +
+            moneyGBP(r.amount) +
+            "</td><td>" +
+            r.status +
+            "</td><td>" +
+            actions +
+            "</td></tr>"
+          );
+        })
+        .join("") +
+      "</tbody></table></div>";
+
+    root.querySelectorAll("[data-pay]").forEach(function (btn) {
+      btn.addEventListener("click", async function () {
+        const accts = await api("/api/accounts");
+        const current = accts.accounts.find(function (a) {
+          return a.type === "CURRENT" && a.currency === "GBP";
+        });
+        if (!current) return showToast("No GBP current account", "error");
+        await api("/api/payment-requests/" + btn.getAttribute("data-pay") + "/pay", {
+          method: "POST",
+          body: JSON.stringify({ fromAccountId: current.id }),
+        });
+        showToast("Request paid", "ok");
+        loadRequests();
+        fillAccounts();
+      });
+    });
+    root.querySelectorAll("[data-decline]").forEach(function (btn) {
+      btn.addEventListener("click", async function () {
+        await api("/api/payment-requests/" + btn.getAttribute("data-decline") + "/decline", {
+          method: "POST",
+          body: "{}",
+        });
+        loadRequests();
+      });
+    });
+  }
+
+  async function refreshFxHint() {
+    const form = document.getElementById("fx-form");
+    const sel = form.fromAccountId;
+    const opt = sel.options[sel.selectedIndex];
+    if (!opt) return;
+    const from = (opt.textContent.match(/CURRENT|SAVINGS|POT/) && opt.textContent.split(" · ")[1]) || "GBP";
+    const to = form.toCurrency.value;
+    try {
+      const rate = await api("/api/fx/rate?from_currency=" + encodeURIComponent(from) + "&to_currency=" + encodeURIComponent(to));
+      document.getElementById("fx-rate").textContent =
+        "1 " + rate.from + " = " + rate.rate + " " + rate.to + " (" + rate.source + ")";
+    } catch (e) {
+      document.getElementById("fx-rate").textContent = "";
+    }
+  }
+
+  (async function () {
+    if (!requireAuth()) return;
+    await fillAccounts();
+    await loadRequests();
+    connectLive(function (evt) {
+      if (!evt || evt.event === "balance" || evt.event === "notification") {
+        fillAccounts();
+        loadRequests();
+      }
+    });
+
+    wireForm(document.getElementById("deposit-form"), "/api/transactions/deposit", function (fd) {
+      return { accountId: Number(fd.get("accountId")), amount: fd.get("amount"), note: fd.get("note") };
+    });
+    wireForm(document.getElementById("withdraw-form"), "/api/transactions/withdraw", function (fd) {
+      return { accountId: Number(fd.get("accountId")), amount: fd.get("amount"), note: fd.get("note") };
+    });
+    wireForm(document.getElementById("transfer-form"), "/api/transactions/transfer", function (fd) {
+      return {
+        fromAccountId: Number(fd.get("fromAccountId")),
+        toAccountNumber: fd.get("toAccountNumber"),
+        amount: fd.get("amount"),
+        note: fd.get("note"),
+      };
+    });
+    wireForm(document.getElementById("request-form"), "/api/payment-requests", function (fd) {
+      return {
+        toEmail: fd.get("toEmail"),
+        amount: fd.get("amount"),
+        note: fd.get("note") || null,
+      };
+    });
+    wireForm(document.getElementById("fx-form"), "/api/fx/convert", function (fd) {
+      return {
+        fromAccountId: Number(fd.get("fromAccountId")),
+        toCurrency: fd.get("toCurrency"),
+        amount: fd.get("amount"),
+      };
+    });
+
+    document.getElementById("fx-form").toCurrency.addEventListener("change", refreshFxHint);
+    document.getElementById("fx-form").fromAccountId.addEventListener("change", refreshFxHint);
+    refreshFxHint();
+  })();
+</script>
+{% endblock %}

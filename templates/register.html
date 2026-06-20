@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Register · NovaBank</title>
+    <link
+      href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="/static/css/style.css" />
+  </head>
+  <body>
+    <div class="auth-page">
+      <form class="auth-card" id="register-form">
+        <div class="brand" style="margin-bottom: 1rem">Nova<span>Bank</span></div>
+        <h1>Open account</h1>
+        <label for="fullName">Full name</label>
+        <input id="fullName" required autocomplete="name" />
+        <label for="email">Email</label>
+        <input id="email" type="email" required autocomplete="email" />
+        <label for="password">Password (8+ characters)</label>
+        <input id="password" type="password" required minlength="8" autocomplete="new-password" />
+        <label for="phone">Phone (optional)</label>
+        <input id="phone" type="tel" autocomplete="tel" />
+        <button class="btn" type="submit" style="width: 100%; margin-top: 1.25rem">Create account</button>
+        <p class="form-error hidden" id="error"></p>
+        <p class="muted" style="margin-top: 1rem">
+          Already registered? <a href="/login">Log in</a>
+        </p>
+      </form>
+    </div>
+    <script src="/static/js/api.js"></script>
+    <script>
+      document.getElementById("register-form").addEventListener("submit", async (e) => {
+        e.preventDefault();
+        const error = document.getElementById("error");
+        error.classList.add("hidden");
+        try {
+          const data = await api("/api/auth/register", {
+            method: "POST",
+            body: JSON.stringify({
+              fullName: document.getElementById("fullName").value,
+              email: document.getElementById("email").value,
+              password: document.getElementById("password").value,
+              phone: document.getElementById("phone").value,
+            }),
+          });
+          setToken(data.token);
+          window.location.href = "/dashboard";
+        } catch (err) {
+          error.textContent = err.message;
+          error.classList.remove("hidden");
+        }
+      });
+    </script>
+  </body>
+</html>

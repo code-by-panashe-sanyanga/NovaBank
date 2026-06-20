@@ -1,0 +1,95 @@
+{% extends "base.html" %}
+{% block title %}Cards · NovaBank{% endblock %}
+{% block body_attrs %}data-page="cards"{% endblock %}
+{% block content %}
+<div class="topbar"><h1>Cards</h1></div>
+<div class="grid-2" id="cards"></div>
+{% endblock %}
+{% block scripts %}
+<script>
+  const BLOCKABLE = ["gambling", "shopping", "entertainment", "eating_out"];
+
+  async function loadCards() {
+    const data = await api("/api/cards");
+    const root = document.getElementById("cards");
+    if (!data.cards.length) {
+      root.innerHTML = '<div class="card muted">No cards</div>';
+      return;
+    }
+    root.innerHTML = data.cards
+      .map(function (c) {
+        const checks = BLOCKABLE.map(function (cat) {
+          const on = (c.blockedCategories || []).indexOf(cat) !== -1;
+          return (
+            '<label style="display:block;margin:0.25rem 0"><input type="checkbox" data-cat="' +
+            cat +
+            '"' +
+            (on ? " checked" : "") +
+            " /> Block " +
+            cat.replace("_", " ") +
+            "</label>"
+          );
+        }).join("");
+        return (
+          '<div class="card" data-card="' +
+          c.id +
+          '"><div class="stat-label">Debit card</div><div class="stat-value" style="font-size:1.3rem">' +
+          c.maskedNumber +
+          '</div><p class="muted">Expires ' +
+          c.expiryMonth +
+          "/" +
+          c.expiryYear +
+          ' · <span class="pill' +
+          (c.isFrozen ? " frozen" : "") +
+          '">' +
+          (c.isFrozen ? "Frozen" : "Active") +
+          '</span></p><button class="btn secondary" style="margin-top:0.75rem" data-freeze="' +
+          c.id +
+          '" data-frozen="' +
+          c.isFrozen +
+          '">' +
+          (c.isFrozen ? "Unfreeze" : "Freeze") +
+          '</button><div style="margin-top:1rem"><div class="stat-label">Spending controls</div>' +
+          checks +
+          '<button class="btn" style="margin-top:0.75rem" data-controls="' +
+          c.id +
+          '">Save controls</button></div></div>'
+        );
+      })
+      .join("");
+
+    root.querySelectorAll("[data-freeze]").forEach(function (btn) {
+      btn.addEventListener("click", async function () {
+        const id = btn.getAttribute("data-freeze");
+        const frozen = btn.getAttribute("data-frozen") === "true";
+        const path = frozen
+          ? "/api/cards/" + id + "/unfreeze"
+          : "/api/cards/" + id + "/freeze";
+        await api(path, { method: "POST", body: "{}" });
+        loadCards();
+      });
+    });
+
+    root.querySelectorAll("[data-controls]").forEach(function (btn) {
+      btn.addEventListener("click", async function () {
+        const id = btn.getAttribute("data-controls");
+        const card = root.querySelector('[data-card="' + id + '"]');
+        const blocked = [];
+        card.querySelectorAll("[data-cat]").forEach(function (cb) {
+          if (cb.checked) blocked.push(cb.getAttribute("data-cat"));
+        });
+        await api("/api/cards/" + id + "/controls", {
+          method: "PATCH",
+          body: JSON.stringify({ blockedCategories: blocked }),
+        });
+        showToast("Controls saved", "ok");
+      });
+    });
+  }
+
+  (async function () {
+    if (!requireAuth()) return;
+    await loadCards();
+  })();
+</script>
+{% endblock %}

@@ -1,0 +1,82 @@
+{% extends "base.html" %}
+{% block title %}Accounts · NovaBank{% endblock %}
+{% block body_attrs %}data-page="accounts"{% endblock %}
+{% block content %}
+<div class="topbar"><h1>Accounts</h1></div>
+<div class="grid-2" id="accounts"></div>
+<div class="card" style="margin-top: 1rem">
+  <h3 style="margin-bottom: 0.75rem">Statement</h3>
+  <label for="account-pick">Account</label>
+  <select id="account-pick"></select>
+  <div class="table-wrap" style="margin-top: 1rem">
+    <table>
+      <thead>
+        <tr><th>Reference</th><th>Type</th><th>Amount</th><th>Note</th><th>When</th></tr>
+      </thead>
+      <tbody id="txn-body"></tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+  async function loadTxns(id) {
+    const data = await api("/api/accounts/" + id + "/transactions");
+    const body = document.getElementById("txn-body");
+    if (!data.transactions.length) {
+      body.innerHTML = '<tr><td colspan="5" class="muted">No transactions</td></tr>';
+      return;
+    }
+    body.innerHTML = data.transactions
+      .map(function (t) {
+        return (
+          "<tr><td>" +
+          t.reference +
+          "</td><td>" +
+          t.type +
+          "</td><td>" +
+          moneyGBP(t.amount) +
+          "</td><td>" +
+          (t.note || "") +
+          "</td><td>" +
+          formatDateTime(t.createdAt) +
+          "</td></tr>"
+        );
+      })
+      .join("");
+  }
+
+  (async function () {
+    if (!requireAuth()) return;
+    const data = await api("/api/accounts");
+    document.getElementById("accounts").innerHTML = data.accounts
+      .map(function (a) {
+        return (
+          '<div class="card"><div class="stat-label">' +
+          a.type +
+          '</div><div class="stat-value">' +
+          moneyGBP(a.balance) +
+          "</div><p class=\"muted\">" +
+          a.accountNumber +
+          " · " +
+          a.sortCode +
+          " · " +
+          a.status +
+          "</p></div>"
+        );
+      })
+      .join("");
+
+    const pick = document.getElementById("account-pick");
+    pick.innerHTML = data.accounts
+      .map(function (a) {
+        return '<option value="' + a.id + '">' + a.type + " · " + a.accountNumber + "</option>";
+      })
+      .join("");
+    pick.addEventListener("change", function () {
+      loadTxns(pick.value);
+    });
+    if (data.accounts[0]) loadTxns(data.accounts[0].id);
+  })();
+</script>
+{% endblock %}

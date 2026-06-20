@@ -1,0 +1,115 @@
+{% extends "base.html" %}
+{% block title %}Dashboard · NovaBank{% endblock %}
+{% block body_attrs %}data-page="dashboard"{% endblock %}
+{% block content %}
+<div class="topbar">
+  <h1>Dashboard</h1>
+</div>
+<div class="grid-3" id="balance-cards"></div>
+<div class="grid-2" style="margin-top: 1rem">
+  <div class="card">
+    <h3 style="margin-bottom: 0.75rem">Recent activity</h3>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Reference</th>
+            <th>Type</th>
+            <th>Amount</th>
+            <th>When</th>
+          </tr>
+        </thead>
+        <tbody id="recent-body"></tbody>
+      </table>
+    </div>
+  </div>
+  <div class="card">
+    <h3 style="margin-bottom: 0.75rem">Spending</h3>
+    <canvas id="spend-chart" height="180"></canvas>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script>
+  let chart;
+
+  async function refreshDashboard() {
+    const data = await api("/api/dashboard");
+    const cards = document.getElementById("balance-cards");
+    cards.innerHTML =
+      '<div class="card"><div class="stat-label">Total balance</div><div class="stat-value">' +
+      moneyGBP(data.totalBalance) +
+      "</div></div>" +
+      data.accounts
+        .map(function (a) {
+          return (
+            '<div class="card"><div class="stat-label">' +
+            a.type +
+            " · " +
+            a.accountNumber +
+            '</div><div class="stat-value">' +
+            moneyGBP(a.balance) +
+            '</div><div class="muted">' +
+            a.status +
+            "</div></div>"
+          );
+        })
+        .join("");
+
+    const body = document.getElementById("recent-body");
+    if (!data.recentTransactions.length) {
+      body.innerHTML = '<tr><td colspan="4" class="muted">No transactions yet</td></tr>';
+    } else {
+      body.innerHTML = data.recentTransactions
+        .map(function (t) {
+          return (
+            "<tr><td>" +
+            t.reference +
+            "</td><td>" +
+            t.type +
+            "</td><td>" +
+            moneyGBP(t.amount) +
+            "</td><td>" +
+            formatDateTime(t.createdAt) +
+            "</td></tr>"
+          );
+        })
+        .join("");
+    }
+
+    if (data.accounts[0]) {
+      const spend = await api("/api/accounts/" + data.accounts[0].id + "/spending");
+      const ctx = document.getElementById("spend-chart");
+      if (chart) chart.destroy();
+      chart = new Chart(ctx, {
+        type: "bar",
+        data: {
+          labels: spend.labels,
+          datasets: [
+            {
+              label: "Debits",
+              data: spend.values.map(Number),
+              backgroundColor: "#f54e00",
+            },
+          ],
+        },
+        options: {
+          plugins: { legend: { display: false } },
+          scales: { y: { beginAtZero: true } },
+        },
+      });
+    }
+  }
+
+  (async function () {
+    if (!requireAuth()) return;
+    try {
+      await refreshDashboard();
+      connectLive(refreshDashboard);
+    } catch (err) {
+      if (err.status === 401) logout();
+    }
+  })();
+</script>
+{% endblock %}
