@@ -1,0 +1,146 @@
+// NovaBank database schema
+// I kept everything in one file since the project is small enough -
+// Users own Accounts, Accounts have Transactions and Cards.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  CUSTOMER
+  ADMIN
+}
+
+enum AccountType {
+  CURRENT
+  SAVINGS
+}
+
+enum AccountStatus {
+  ACTIVE
+  FROZEN
+}
+
+enum TransactionType {
+  DEPOSIT
+  WITHDRAWAL
+  TRANSFER
+}
+
+enum TransactionStatus {
+  COMPLETED
+  PENDING
+  FAILED
+}
+
+model User {
+  id           Int      @id @default(autoincrement())
+  customerId   String   @unique // shown to the user, e.g. NB-10432
+  fullName     String
+  email        String   @unique
+  passwordHash String
+  phone        String?
+  addressLine  String?
+  city         String?
+  postcode     String?
+  role         Role     @default(CUSTOMER)
+  dateJoined   DateTime @default(now())
+  isLocked     Boolean  @default(false)
+
+  // password reset (forgot password flow)
+  resetToken       String?
+  resetTokenExpiry DateTime?
+
+  accounts      Account[]
+  cards         Card[]
+  notifications Notification[]
+  loginHistory  LoginHistory[]
+  auditLogs     AuditLog[]
+}
+
+model Account {
+  id            Int           @id @default(autoincrement())
+  accountNumber String        @unique // 8 digits like a real UK account
+  sortCode      String        @default("04-29-09")
+  type          AccountType
+  balance       Decimal       @default(0) @db.Decimal(12, 2)
+  currency      String        @default("GBP")
+  status        AccountStatus @default(ACTIVE)
+  createdAt     DateTime      @default(now())
+
+  user   User @relation(fields: [userId], references: [id])
+  userId Int
+
+  // a transaction can point at two accounts (sender + receiver)
+  sentTransactions     Transaction[] @relation("sender")
+  receivedTransactions Transaction[] @relation("receiver")
+  cards                Card[]
+}
+
+model Transaction {
+  id        Int               @id @default(autoincrement())
+  reference String            @unique // e.g. TXN-8F2K1A
+  type      TransactionType
+  amount    Decimal           @db.Decimal(12, 2)
+  status    TransactionStatus @default(COMPLETED)
+  // short note the user attaches to the payment
+  note      String?
+  createdAt DateTime          @default(now())
+
+  // sender is null for deposits, receiver is null for withdrawals
+  sender     Account? @relation("sender", fields: [senderId], references: [id])
+  senderId   Int?
+  receiver   Account? @relation("receiver", fields: [receiverId], references: [id])
+  receiverId Int?
+}
+
+model Card {
+  id         Int      @id @default(autoincrement())
+  cardNumber String   @unique // randomly generated, this is a demo app
+  expiryMonth Int
+  expiryYear  Int
+  isFrozen   Boolean  @default(false)
+  createdAt  DateTime @default(now())
+
+  user      User    @relation(fields: [userId], references: [id])
+  userId    Int
+  account   Account @relation(fields: [accountId], references: [id])
+  accountId Int
+}
+
+model Notification {
+  id        Int      @id @default(autoincrement())
+  title     String
+  message   String
+  isRead    Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  user   User @relation(fields: [userId], references: [id])
+  userId Int
+}
+
+model LoginHistory {
+  id        Int      @id @default(autoincrement())
+  ipAddress String
+  userAgent String
+  success   Boolean
+  createdAt DateTime @default(now())
+
+  user   User @relation(fields: [userId], references: [id])
+  userId Int
+}
+
+model AuditLog {
+  id        Int      @id @default(autoincrement())
+  action    String // e.g. ACCOUNT_FROZEN, TRANSFER_SENT
+  details   String
+  createdAt DateTime @default(now())
+
+  user   User @relation(fields: [userId], references: [id])
+  userId Int
+}
