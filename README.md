@@ -1,23 +1,10 @@
 # NovaBank
 
-Double-entry online banking demo.
+Online banking demo with a proper double-entry ledger.
 
-**Stack:** FastAPI · PostgreSQL · HTML/CSS/vanilla JS · JWT/bcrypt · WebSockets  
-**UI colours:** Cursor cream / ink / orange `#f54e00`
+Built with FastAPI and PostgreSQL. The UI is server-rendered HTML/CSS with a bit of plain JS (Chart.js for spending charts). Auth is JWT + bcrypt; live updates go over WebSockets.
 
-## Why this design
-
-| Choice | Reason |
-|--------|--------|
-| PostgreSQL | Real ACID, `SELECT … FOR UPDATE`, fit for a ledger |
-| Double-entry `ledger_entries` | Every movement posts balanced debit + credit; immutable log |
-| `balance_cache` | Fast reads; reconciled against ledger sum |
-| FastAPI | Typed API, `/docs` OpenAPI, WebSocket support |
-| Vanilla JS | Matches portfolio stack; Chart.js for spending |
-
-SQLite can boot the UI when Postgres is not installed. **Production / concurrency demos use Postgres** via Docker Compose.
-
-## Run (local SQLite smoke)
+## Run locally
 
 ```bash
 python3 -m venv venv
@@ -27,66 +14,18 @@ python seed_ledger.py
 uvicorn novabank.main:app --reload --port 5002
 ```
 
-Open http://localhost:5002 · API docs http://localhost:5002/docs
+Then open http://localhost:5002 (API docs at `/docs`).
 
-### Demo logins
+Demo accounts (password `Password123`):
 
-| Email | Password | Role |
-|-------|----------|------|
-| alex@example.com | Password123 | Customer |
-| jamie@example.com | Password123 | Customer |
-| admin@novabank.co.uk | Password123 | Admin |
+- alex@example.com
+- jamie@example.com
+- admin@novabank.co.uk (admin)
 
-## Run (PostgreSQL)
+For Postgres: `docker compose up --build`, then seed with `DATABASE_URL` pointed at the compose database.
 
-```bash
-docker compose up --build
-# then: DATABASE_URL=postgresql+psycopg://novabank:novabank@localhost:5432/novabank python seed_ledger.py
-```
+## Notes
 
-## Architecture
+Transfers lock accounts, write an immutable transaction header, post balanced ledger entries, then update the balance cache. Customer balances use the usual liability convention (credit up, debit down).
 
-See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
-
-```mermaid
-flowchart TB
-  UI[Browser HTML/CSS/JS] -->|REST JWT| API[FastAPI]
-  UI -->|WebSocket| API
-  API --> TS[Transfer service]
-  TS -->|FOR UPDATE| PG[(PostgreSQL)]
-  TS --> LE[ledger_entries]
-  TS --> TX[transactions immutable]
-  API --> Fraud[Rules engine]
-  Worker[workers/fraud_scan.py] --> PG
-```
-
-## Money movement
-
-1. Lock accounts in id order (`FOR UPDATE` on Postgres)
-2. Insert `transactions` row (immutable header, optional idempotency key)
-3. Insert balanced `ledger_entries` (debits == credits)
-4. Update `balance_cache`
-5. Commit — or roll back the whole unit
-
-Customer accounts use liability convention: **CREDIT** raises balance, **DEBIT** lowers it. External cash uses a `SYSTEM` account.
-
-**Extras:** pots (sub-accounts), round-ups on card payments, payment requests, category insights, FX via Frankfurter (real ECB rates). Health score is toy ledger analytics — not a bureau credit score.
-
-## Tests
-
-```bash
-pytest -q
-```
-
-CI runs the same suite on GitHub Actions.
-
-## Layout
-
-| Path | Role |
-|------|------|
-| `novabank/services/ledger.py` | Double-entry transfer service |
-| `novabank/services/fraud.py` | Anomaly rules (flag, don’t block) |
-| `novabank/api.py` | REST routes |
-| `novabank/main.py` | App, pages, WebSocket, `/docs` |
-| `workers/fraud_scan.py` | Offline scan / cron entrypoint |
-| `templates/` + `static/` | UI |
+There are also pots, round-ups, payment requests, category insights, and a small fraud rules worker. Not a real bank — demo only.
