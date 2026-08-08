@@ -90,4 +90,3 @@ CI runs the same suite on GitHub Actions.
 | `novabank/main.py` | App, pages, WebSocket, `/docs` |
 | `workers/fraud_scan.py` | Offline scan / cron entrypoint |
 | `templates/` + `static/` | UI |
-| `client/` + `server/` | Old Next/Express stack (legacy) |

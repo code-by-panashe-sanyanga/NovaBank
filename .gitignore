@@ -9,12 +9,6 @@ venv/
 .venv/
 .pytest_cache/
 node_modules/
-client/node_modules/
-client/.next/
-client/out/
-server/node_modules/
-server/dist/
-server/coverage/
 *.db
 novabank.db
 novabank_ledger.db

@@ -86,7 +86,6 @@ Optional next step: scikit-learn IsolationForest on synthetic features — not r
 | Cached balance + ledger | Fast reads; must reconcile (we expose a check) |
 | In-process WebSocket hub | Simple; needs sticky sessions / Redis pubsub to scale out |
 | Rules before ML | Explainable flags first; ML is optional depth |
-| Keep old `client/`/`server/` | Legacy Next stack until Railway cutover |
 
 ## API surface (high level)
 
